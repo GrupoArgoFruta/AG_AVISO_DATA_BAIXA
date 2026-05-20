@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="AG_AVISO_BAIXA_DATA">
+    <output-path>$USER_HOME$/eclipse-workspace/eclipse-workspace/jars/AG-AVISO-DATA-BAIXA</output-path>
+    <root id="archive" name="AG_AVISO_BAIXA_DATA.jar">
+      <element id="module-output" name="AG_AVISO_DATA_BAIXA" />
+    </root>
+  </artifact>
+</component>
