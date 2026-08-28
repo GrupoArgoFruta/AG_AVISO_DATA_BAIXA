@@ -1,6 +1,7 @@
 package br.com.principal.aviso.dtbaixa.service;
 
 import java.math.BigDecimal;
+import java.util.List;
 
 import com.sankhya.util.BigDecimalUtil;
 
@@ -14,22 +15,24 @@ public class EnvioEmailService {
 
 	private static final String EMAIL_COPIA = "comprovante.pagamento@argofruta.com";
 
-	public void enviarEmail(String titulo, String mensagem, String emailParceiro) throws Exception {
+	public void enviarEmail(String titulo, String mensagem, List<String> emailsParceiro) throws Exception {
 		SessionHandle hnd = null;
 		try {
 			hnd = JapeSession.open();
 			JapeWrapper filaDAO = JapeFactory.dao(DynamicEntityNames.FILA_MSG);
 
-			// 1. Envia pro parceiro
-			filaDAO.create()
-					.set("EMAIL", emailParceiro.trim())
-					.set("CODCON", BigDecimal.ZERO)
-					.set("STATUS", "Pendente")
-					.set("TIPOENVIO", "E")
-					.set("MAXTENTENVIO", BigDecimalUtil.valueOf(3))
-					.set("ASSUNTO", titulo)
-					.set("MENSAGEM", mensagem.toCharArray())
-					.save();
+			// 1. Envia pra cada e-mail do parceiro
+			for (String emailParceiro : emailsParceiro) {
+				filaDAO.create()
+						.set("EMAIL", emailParceiro.trim())
+						.set("CODCON", BigDecimal.ZERO)
+						.set("STATUS", "Pendente")
+						.set("TIPOENVIO", "E")
+						.set("MAXTENTENVIO", BigDecimalUtil.valueOf(3))
+						.set("ASSUNTO", titulo)
+						.set("MENSAGEM", mensagem.toCharArray())
+						.save();
+			}
 
 			// 2. Cópia pra você
 			filaDAO.create()

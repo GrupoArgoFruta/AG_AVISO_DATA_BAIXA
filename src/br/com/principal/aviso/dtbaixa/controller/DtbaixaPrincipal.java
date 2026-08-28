@@ -3,8 +3,14 @@ package br.com.principal.aviso.dtbaixa.controller;
 import java.math.BigDecimal;
 import java.sql.Date;
 import java.sql.ResultSet;
+import java.text.DecimalFormat;
+import java.text.DecimalFormatSymbols;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 
 import org.cuckoo.core.ScheduledAction;
@@ -25,7 +31,7 @@ public class DtbaixaPrincipal implements ScheduledAction {
 	@Override
 	public void onTime(ScheduledActionContext sac) {
 		EnvioEmailService emailService = new EnvioEmailService();
-		String titulo = "Comprovante de Pagamento - Argo Fruta";
+		String titulo = "Comprovante de Pagamento - ArgoFruta";
 		JdbcWrapper jdbc = null;
 		NativeSql queryVoa = null;
 		ResultSet rset = null;
@@ -43,10 +49,13 @@ public class DtbaixaPrincipal implements ScheduledAction {
 			queryVoa.appendSql(
 					"SELECT VGFFIN.VLRBAIXA, " +
 							"FIN.NUFIN, " +
+							"CAB.NUMNOTA, " +
+							"CAB.AD_INVOICECMA, " +
 							"VGFFIN.DHBAIXA, " +
 							"PAR.RAZAOSOCIAL, " +
 							"PAR.AD_ATIVOVLRBAIXA, " +
 							"PAR.EMAIL, " +
+							"PAR.AD_EMAILCLIENT, " +
 							"PAR.CODPARC " +
 							"FROM VGFFIN VGFFIN " +
 							"INNER JOIN TGFVEN VEN ON (VEN.CODVEND = VGFFIN.CODVEND) " +
@@ -61,14 +70,16 @@ public class DtbaixaPrincipal implements ScheduledAction {
 							"INNER JOIN TCSPRJ PROJ ON (PROJ.CODPROJ = VGFFIN.CODPROJ) " +
 							"LEFT JOIN TSICTA CTA ON CTA.CODCTABCOINT = VGFFIN.CODCTABCOINT " +
 							"LEFT JOIN TSIMOE Moeda ON Moeda.CODMOEDA = VGFFIN.CODMOEDA " +
-							"WHERE VGFFIN.RECDESP = 1 " +
-							"AND TRUNC(VGFFIN.DHBAIXA) = TRUNC(SYSDATE) " +
+							"LEFT JOIN TGFCAB CAB ON (CAB.NUNOTA = FIN.NUNOTA) " +
+							"WHERE VGFFIN.RECDESP = -1 " +
+							"AND TRUNC(VGFFIN.DHBAIXA) = TRUNC(SYSDATE) - 1 " +
 							"AND NOT (VGFFIN.PROVISAO = 'S' AND VGFFIN.DHBAIXA IS NOT NULL) " +
 							"AND VGFFIN.PROVISAO IN ('N', 'S') " +
 							"AND PAR.AD_ATIVOVLRBAIXA = 'S' " +
-							"AND PAR.EMAIL IS NOT NULL " +
+							"AND (PAR.AD_EMAILCLIENT IS NOT NULL OR PAR.EMAIL IS NOT NULL) " +
 							"AND VGFFIN.DHBAIXA IS NOT NULL " +
 							"AND VGFFIN.VLRBAIXA > 0 " +
+							"AND VGFFIN.CODTIPOPERBAIXA = 1500 " +
 							"AND NVL(FIN.AD_NOTIFENVIADA, 'N') = 'N'"
 			);
 
@@ -78,6 +89,7 @@ public class DtbaixaPrincipal implements ScheduledAction {
 
 			while (rset.next()) {
 				BigDecimal nroUnico = rset.getBigDecimal("NUFIN");
+				BigDecimal numNota  = rset.getBigDecimal("NUMNOTA");
 				BigDecimal vlrBaixa = rset.getBigDecimal("VLRBAIXA");
 				BigDecimal codParc  = rset.getBigDecimal("CODPARC");
 
@@ -87,6 +99,8 @@ public class DtbaixaPrincipal implements ScheduledAction {
 
 				String parceiro = rset.getString("RAZAOSOCIAL");
 				String email    = rset.getString("EMAIL");
+				String emailClient = rset.getString("AD_EMAILCLIENT");
+				String invoiceCma = rset.getString("AD_INVOICECMA");
 				String ativoParaNotificar = rset.getString("AD_ATIVOVLRBAIXA");
 
 				if (titulosNotificados.contains(nroUnico)) {
@@ -94,15 +108,18 @@ public class DtbaixaPrincipal implements ScheduledAction {
 					continue;
 				}
 
-				String mensagemNotificacao = buildEmailHtml(nroUnico, dataBaixaFormatada, vlrBaixa, parceiro, email);
+				List<String> emailsDestino = resolverEmails(emailClient, email);
+				String emailsDestinoStr = String.join(", ", emailsDestino);
 
-				if (email != null && !email.trim().isEmpty()
+				String mensagemNotificacao = buildEmailHtml(numNota, invoiceCma, dataBaixaFormatada, vlrBaixa, parceiro, emailsDestinoStr);
+
+				if (!emailsDestino.isEmpty()
 						&& dataBaixa != null
 						&& vlrBaixa != null
 						&& vlrBaixa.compareTo(BigDecimal.ZERO) > 0
 						&& "S".equals(ativoParaNotificar)) {
 
-					emailService.enviarEmail(titulo, mensagemNotificacao, email);
+					emailService.enviarEmail(titulo, mensagemNotificacao, emailsDestino);
 
 					NativeSql updateSql = new NativeSql(jdbc);
 					try {
@@ -113,10 +130,10 @@ public class DtbaixaPrincipal implements ScheduledAction {
 					}
 
 					titulosNotificados.add(nroUnico);
-					sac.info("Email enviado para " + parceiro + " (" + email + ") + cópia | NUFIN: " + nroUnico);
+					sac.info("Email enviado para " + parceiro + " (" + emailsDestinoStr + ") + cópia | NUFIN: " + nroUnico + " | NUMNOTA: " + numNota + " | InvoiceCMA: " + invoiceCma);
 				} else {
 					sac.info("Condições inválidas para NUFIN: " + nroUnico
-							+ " | email=[" + email + "]"
+							+ " | emails=[" + emailsDestinoStr + "]"
 							+ " | vlrBaixa=[" + vlrBaixa + "]"
 							+ " | ativoNotif=[" + ativoParaNotificar + "]");
 				}
@@ -135,7 +152,44 @@ public class DtbaixaPrincipal implements ScheduledAction {
 		}
 	}
 
-	private String buildEmailHtml(BigDecimal nroUnico, String dataBaixa, BigDecimal vlrBaixa, String parceiro, String email) {
+	private List<String> resolverEmails(String emailClient, String emailPadrao) {
+		Set<String> emails = new LinkedHashSet<>();
+
+		if (emailPadrao != null && !emailPadrao.trim().isEmpty()) {
+			emails.add(emailPadrao.trim());
+		}
+
+		if (emailClient != null && !emailClient.trim().isEmpty()) {
+			for (String parte : emailClient.split("[,;]")) {
+				String emailTratado = parte.trim();
+				if (!emailTratado.isEmpty()) {
+					emails.add(emailTratado);
+				}
+			}
+		}
+
+		return new ArrayList<>(emails);
+	}
+
+	private String formatarMoeda(BigDecimal valor) {
+		if (valor == null) {
+			return "";
+		}
+		DecimalFormatSymbols simbolos = new DecimalFormatSymbols(new Locale("pt", "BR"));
+		DecimalFormat df = new DecimalFormat("#,##0.00", simbolos);
+		return "R$ " + df.format(valor);
+	}
+
+	private String buildEmailHtml(BigDecimal numNota, String invoiceCma, String dataBaixa, BigDecimal vlrBaixa, String parceiro, String email) {
+		// Invoice CMA: só entra no comprovante quando o parceiro tem o campo preenchido (CMA / F-Trade).
+		String invoiceCmaBloco = "";
+		if (invoiceCma != null && !invoiceCma.trim().isEmpty()) {
+			invoiceCmaBloco =
+					"                                <h4 style=\"color: #333333; margin: 5px 0;\">Invoice CMA:</h4>\r\n"
+					+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + invoiceCma.trim() + "</p>\r\n"
+					+ "                                <hr style=\"border: 0; border-top: 1px solid #ccc;\">\r\n";
+		}
+
 		return "<html>\r\n"
 				+ "<head>\r\n"
 				+ "    <title>Comprovante ArgoFruta</title>\r\n"
@@ -148,7 +202,7 @@ public class DtbaixaPrincipal implements ScheduledAction {
 				+ "                <table width=\"600\" border=\"0\" cellpadding=\"20\" cellspacing=\"0\" style=\"background-color: white; margin: auto; box-shadow: 0 0 10px rgba(0,0,0,0.1); min-height: 400px;\">\r\n"
 				+ "                    <tr>\r\n"
 				+ "                        <td align=\"center\" style=\"margin-bottom: 20px;\">\r\n"
-				+ "                            <img src=\"https://argofruta.com/wp-content/uploads/2021/05/Logo-text-green.png\" alt=\"Argo Fruta Logo\" width=\"250\" style=\"margin-top: 30px;\">\r\n"
+				+ "                            <img src=\"https://argofruta.com/wp-content/uploads/2021/05/Logo-text-green.png\" alt=\"ArgoFruta Logo\" width=\"250\" style=\"margin-top: 30px;\">\r\n"
 				+ "                        </td>\r\n"
 				+ "                    </tr>\r\n"
 				+ "                    <tr>\r\n"
@@ -161,14 +215,15 @@ public class DtbaixaPrincipal implements ScheduledAction {
 				+ "                            </div>\r\n"
 				+ "                            <br>\r\n"
 				+ "                            <div style=\"border: 1px solid rgba(0, 0, 0, .05); max-width: 80%; margin: 0 auto; padding: 1.5em;\">\r\n"
-				+ "                                <h4 style=\"color: #333333; margin: 5px 0;\">Número do Documento:</h4>\r\n"
-				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + nroUnico + "</p>\r\n"
+				+ "                                <h4 style=\"color: #333333; margin: 5px 0;\">Número da Nota:</h4>\r\n"
+				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + numNota + "</p>\r\n"
 				+ "                                <hr style=\"border: 0; border-top: 1px solid #ccc;\">\r\n"
+				+ invoiceCmaBloco
 				+ "                                <h4 style=\"color: #333333; margin: 5px 0;\">Data do pagamento:</h4>\r\n"
 				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + dataBaixa + "</p>\r\n"
 				+ "                                <hr style=\"border: 0; border-top: 1px solid #ccc;\">\r\n"
 				+ "                                <h4 style=\"color: #333333; margin: 5px 0;\">Valor total:</h4>\r\n"
-				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + vlrBaixa + "</p>\r\n"
+				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + formatarMoeda(vlrBaixa) + "</p>\r\n"
 				+ "                                <hr style=\"border: 0; border-top: 1px solid #ccc;\">\r\n"
 				+ "                                <h4 style=\"color: #333333; margin: 5px 0;\">Parceiro:</h4>\r\n"
 				+ "                                <p style=\"font-size: 14px; color: #000000; margin: 5px 0;\">" + parceiro + "</p>\r\n"
