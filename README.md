@@ -253,30 +253,30 @@ Copiar o JAR para o servidor de produção e ativar a Scheduled Action no ambien
 
 ```mermaid
 flowchart TD
-    A([Scheduled Action\nExecução Diária]) --> B[Abre sessão JAPE\ne conexão JDBC]
-    B --> C[Executa cursor\nVGFFIN + JOINs]
+    A(["Scheduled Action<br/>Execução Diária"]) --> B["Abre sessão JAPE<br/>e conexão JDBC"]
+    B --> C["Executa cursor<br/>VGFFIN + JOINs"]
 
-    C --> D{Para cada\nregistro}
+    C --> D{"Para cada<br/>registro"}
 
-    D --> E{NUFIN já\nprocessado\nnesta execução?}
-    E -- Sim --> F[sac.info: ignorado\ncontinua cursor]
+    D --> E{"NUFIN já<br/>processado<br/>nesta execução?"}
+    E -- Sim --> F["sac.info: ignorado<br/>continua cursor"]
     F --> D
 
-    E -- Não --> G{email, vlrBaixa\ne AD_ATIVOVLRBAIXA\nválidos?}
+    E -- Não --> G{"email, vlrBaixa<br/>e AD_ATIVOVLRBAIXA<br/>válidos?"}
 
-    G -- Não --> H[sac.info: condição\ninválida]
+    G -- Não --> H["sac.info: condição<br/>inválida"]
     H --> D
 
-    G -- Sim --> I[buildEmailHtml\nMonta HTML do comprovante]
-    I --> J[EnvioEmailService\nenviarEmail]
-    J --> K[INSERT TGFMSG\ne-mail parceiro]
-    K --> L[INSERT TGFMSG\ncópia interna]
-    L --> M[UPDATE TGFFIN\nAD_NOTIFENVIADA = S]
-    M --> N[Adiciona NUFIN\nao Set em memória]
-    N --> O[sac.info: e-mail enviado]
+    G -- Sim --> I["buildEmailHtml<br/>Monta HTML do comprovante"]
+    I --> J["EnvioEmailService<br/>enviarEmail"]
+    J --> K["INSERT TGFMSG<br/>e-mail parceiro"]
+    K --> L["INSERT TGFMSG<br/>cópia interna"]
+    L --> M["UPDATE TGFFIN<br/>AD_NOTIFENVIADA = S"]
+    M --> N["Adiciona NUFIN<br/>ao Set em memória"]
+    N --> O["sac.info: e-mail enviado"]
     O --> D
 
-    D --> P([sac.info: Total notificados\nFim da execução])
+    D --> P(["sac.info: Total notificados<br/>Fim da execução"])
 
     style A fill:#1a5632,color:#fff
     style P fill:#28a745,color:#fff
